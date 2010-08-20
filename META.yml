@@ -1,0 +1,32 @@
+---
+abstract: 'Simple Git interface for Padre'
+author:
+  - 'Kaare Rasmussen, C<< <kaare at cpan.org> >>'
+  - 'Kaare Rasmussen <kaare@cpan.org>'
+build_requires:
+  ExtUtils::MakeMaker: 6.42
+  Test::More: 0
+configure_requires:
+  ExtUtils::MakeMaker: 6.42
+distribution_type: module
+generated_by: 'Module::Install version 1.00'
+license: perl
+meta-spec:
+  url: http://module-build.sourceforge.net/META-spec-v1.4.html
+  version: 1.4
+name: Padre-Plugin-Git
+no_index:
+  directory:
+    - inc
+    - t
+requires:
+  Capture::Tiny: 0.03
+  File::Basename: 0
+  File::Spec: 0
+  Padre: 0.67
+  perl: 5.8.0
+resources:
+  homepage: http://padre.perlide.org/
+  license: http://dev.perl.org/licenses/
+  repository: http://svn.perlide.org/padre/trunk/Padre-Plugin-Git/
+version: 0.03
