@@ -17,7 +17,6 @@ MANIFEST			This list of files
 META.yml
 MYMETA.json
 MYMETA.yml
-Padre-Plugin-Git-0.04.tar.gz
 Padre-Plugin-Git.fbp
 README
 t/01-compile.t

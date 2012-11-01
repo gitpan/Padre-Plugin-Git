@@ -13,13 +13,19 @@ use Padre::Wx::Action ();
 use File::Basename    ();
 use File::Which       ();
 use Try::Tiny;
+use File::Slurp;
+use CPAN::Changes;
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 use parent qw(
 	Padre::Plugin
 	Padre::Role::Task
 );
 
+use Data::Printer {
+	caller_info => 0,
+	colored     => 1,
+};
 
 #########
 # We need plugin_enable
@@ -188,6 +194,14 @@ sub menu_plugins_simple {
 							$self->git_cmd_task( 'merge upstream/master', '' );
 						},
 					],
+					Wx::gettext('Branching') => [
+						Wx::gettext('Branch Info') => sub {
+							$self->git_cmd( 'branch -r -a -v', '' );
+						},
+						Wx::gettext('Fetch All Branches from Origin') => sub {
+							$self->git_cmd_task( 'fetch --all', '' );
+						},
+					],
 					Wx::gettext('GitHub') => [
 						Wx::gettext('GitHub Pull Request') => sub {
 							$self->github_pull_request();
@@ -197,6 +211,7 @@ sub menu_plugins_simple {
 			}
 		}
 	};
+	return;
 }
 
 #######
@@ -232,6 +247,13 @@ sub git_cmd {
 	my $message;
 	my $git_cmd;
 	if ( $action =~ m/^commit/ ) {
+
+		#ToDo this needs to be replaced with a dedicated dialogue, as all it dose is dump in to DB::History for no good reason
+		my $commit_editmsg = read_file( $document->project_dir . '/.git/COMMIT_EDITMSG' );
+		chomp $commit_editmsg;
+
+		# p $commit_editmsg;
+
 		$message = $main->prompt( "Git Commit of $location", "Please type in your message", "MY_GIT_COMMIT" );
 
 		return if not $message;
@@ -242,6 +264,12 @@ sub git_cmd {
 			dir    => $document->project_dir,
 			option => 0
 		);
+
+		# p $git_cmd
+
+		# #update Changes file
+		# $self->write_changes( $document->project_dir, $message );
+
 	} else {
 		require Padre::Util;
 		$git_cmd = Padre::Util::run_in_directory_two(
@@ -276,6 +304,16 @@ sub git_cmd {
 		}
 		if ( $git_cmd->{output} ) {
 			$self->load_dialog_output( "Git $action -> $location", $git_cmd->{output} );
+
+			if ( $action =~ m/^commit/ ) {
+				# p $git_cmd->{output};
+				$git_cmd->{output} =~ m/master\s(?<nr>[\w|\d]{7})/;
+				# say $+{nr};
+
+				#update Changes file
+				$self->write_changes( $document->project_dir, $message, $+{nr} );
+			}
+
 		} else {
 			$main->info( Wx::gettext('Info: There is no response, just as if you had run it on the cmd yourself.') );
 		}
@@ -547,6 +585,45 @@ sub clean_dialog {
 	return 1;
 }
 
+########
+# Composed Method write_changes under {{$NEXT}}
+########
+sub write_changes {
+	my $self    = shift;
+	my $dir     = shift;
+	my $message = shift;
+	my $nr_code = shift;
+
+	require File::Spec;
+	my $change_file = File::Spec->catfile( $dir, 'Changes' );
+	# say $change_file;
+
+	if ( -e $change_file ) {
+		# say 'found Changes';
+		# say $change_file;
+
+		my $changes = CPAN::Changes->load(
+			$change_file,
+			next_token => qr/{{\$NEXT}}/,
+		);
+
+		my @releases = $changes->releases;
+
+		if ( $releases[-1]->version eq '{{$NEXT}}' ) {
+			$releases[-1]->add_changes( $message . " [$nr_code]" );
+		}
+
+		# print $changes->serialize;
+
+		write_file( $change_file, { binmode => ':utf8' }, $changes->serialize );
+	}
+	return;
+}
+
+
+
+
+
 1;
 
 __END__
@@ -557,16 +634,29 @@ Padre::Plugin::Git - Simple Git interface for Padre, the Perl IDE,
 
 =head1 VERSION
 
-version  0.05
+version 0.06
 
 =head1 SYNOPSIS
 
 cpan install Padre::Plugin::Git
 
-Access it via Plugin/Git
+Enable it via Padre->Tools->Plugin Manager
 
 For more info see L<wiki|http://padre.perlide.org/trac/wiki/PadrePluginGit>
 
+=head1 DESCRIPTION
+
+Basic git cmd commands, plus a bit more, which is a bit E<beta>etaish
+
+=over 4
+
+=item * if you configure your local ENV's with GitHuB Access you can also do GitHub Pull requests,
+
+=item * plus if you use {{$NEXT}} in your Changes file it will append commit messages below.
+see L<wiki|http://padre.perlide.org/trac/wiki/PadrePluginGit> for more info.
+
+=back
+    
 =head1 METHODS
 
 =over 4
@@ -599,13 +689,28 @@ For more info see L<wiki|http://padre.perlide.org/trac/wiki/PadrePluginGit>
 
 =item *	show_about
 
+=item * write_changes
+
+use CPAN::Changes to write git commits to project Change file, 
+this abuses the {{$NEXT}} token as a valid version 0.06
+see CPAN::Changes::Spec for format
+
 =back
+
+=head1 CONFIGURATION AND ENVIRONMENT
+
+To be able to do a GitHub Pull request, the following need to be configured.
+
+	$ENV{GITHUB_USER}
+	$ENV{GITHUB_TOKEN}
+  
 
 =head1 AUTHOR
 
 Kevin Dawson E<lt>bowtie@cpan.orgE<gt>
 
 Kaare Rasmussen, C<< <kaare at cpan.org> >>
+
 
 =head1 BUGS
 
@@ -614,7 +719,7 @@ Please report any bugs or feature requests to L<http://padre.perlide.org/>
 
 =head1 COPYRIGHT & LICENSE
 
-Copyright 2008-2012 The Padre development team as listed in Padre.pm in the
+Copyright E<copy> E<beta> 2008-2012 The Padre development team as listed in Padre.pm in the
 Padre distribution all rights reserved.
 
 This program is free software; you can redistribute it and/or modify it

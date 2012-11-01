@@ -34,9 +34,14 @@
       },
       "runtime" : {
          "requires" : {
+            "CPAN::Changes" : "0.19",
+            "Carp" : "1.26",
+            "Data::Printer" : "0.33",
+            "File::Slurp" : "9999.19",
+            "File::Spec" : "3.33",
             "File::Which" : "1.09",
             "Padre" : "0.96",
-            "Pithub" : "0.01014",
+            "Pithub" : "0.01016",
             "Try::Tiny" : "0.11",
             "perl" : "5.010"
          }
@@ -55,6 +60,6 @@
          "url" : "http://svn.perlide.org/padre/trunk/Padre-Plugin-Git/"
       }
    },
-   "version" : "0.05",
+   "version" : "0.06",
    "x_module_name" : "Padre::Plugin::Git"
 }
