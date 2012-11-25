@@ -4,7 +4,7 @@ use v5.10;
 use strictures 1;
 
 use Carp qw( croak );
-our $VERSION = '0.07';
+our $VERSION = '0.08';
 
 use Padre::Task   ();
 use Padre::Unload ;
@@ -65,6 +65,8 @@ sub run {
 
 __END__
 
+# Spider bait
+Perl programming -> TIOBE
 
 =pod
 
@@ -74,7 +76,7 @@ Padre::Plugin::Git::Task::Git_cmd - Git plugin for Padre, The Perl IDE.
 
 =head1 VERSION
 
-version 0.07
+version 0.08
 
 =head1 SYNOPSIS
 

@@ -16,7 +16,7 @@ use Try::Tiny;
 use File::Slurp;
 use CPAN::Changes;
 
-our $VERSION = '0.07';
+our $VERSION = '0.08';
 use parent qw(
 	Padre::Plugin
 	Padre::Role::Task
@@ -49,6 +49,11 @@ use constant CHILDREN => qw{
 	Pithub
 };
 
+use constant {
+	BLANK => qq{ },
+	NONE  => q{},
+};
+
 #######
 # Called by padre to check the required interface
 #######
@@ -66,7 +71,7 @@ sub padre_interfaces {
 }
 
 #######
-# Called by padre to know the plugin name
+# Called by Padre to know the plugin name
 #######
 sub plugin_name {
 	return Wx::gettext('Git');
@@ -80,7 +85,7 @@ sub menu_plugins_simple {
 	my $main     = $self->main;
 	my $document = $main->current->document;
 
-	#Hide Git on Tools menu if current file is not in a Git controled dir
+	#Hide Git on Tools menu if current file is not in a Git controlled dir
 	$self->current_files;
 	my $tab_id = $self->main->editor_of_file( $document->{filename} );
 
@@ -90,7 +95,7 @@ sub menu_plugins_simple {
 
 				return $self->plugin_name => [
 					Wx::gettext('About...') => sub {
-						$self->show_about;
+						$self->plugin_about;
 					},
 					Wx::gettext('Local') => [
 						Wx::gettext('Staging') => [
@@ -118,10 +123,10 @@ sub menu_plugins_simple {
 								$self->git_cmd( 'commit', $document->project_dir );
 							},
 							Wx::gettext('Commit Amend') => sub {
-								$self->git_cmd( 'commit --amend', '' );
+								$self->git_cmd( 'commit --amend', NONE );
 							},
 							Wx::gettext('Commit All') => sub {
-								$self->git_cmd( 'commit -a', '' );
+								$self->git_cmd( 'commit -a', NONE );
 							},
 						],
 						Wx::gettext('Checkout') => [
@@ -156,47 +161,52 @@ sub menu_plugins_simple {
 						],
 						Wx::gettext('Log') => [
 							Wx::gettext('log --stat -2') => sub {
-								$self->git_cmd( 'log --stat -2', '' );
+								$self->git_cmd( 'log --stat -2', NONE );
 							},
 							Wx::gettext('log -p -2') => sub {
-								$self->git_cmd( 'log -p -2', '' );
+								$self->git_cmd( 'log -p -2', NONE );
 							},
 							Wx::gettext('log pretty') => sub {
-								$self->git_cmd( 'log --pretty=format:"%h %s" --graph', '' );
+								$self->git_cmd( 'log --pretty=format:"%h %s" --graph', NONE );
+							},
+						],
+						Wx::gettext('Blame') => [
+							Wx::gettext('Blame, Current file') => sub {
+								$self->git_cmd( 'blame', $document->filename );
 							},
 						],
 					],
 					Wx::gettext('Origin') => [
 						Wx::gettext('Show Origin Info.') => sub {
-							$self->git_cmd_task( 'remote show origin', '' );
+							$self->git_cmd_task( 'remote show origin', NONE );
 						},
 						Wx::gettext('Push to Origin') => sub {
-							$self->git_cmd_task( 'push origin master', '' );
+							$self->git_cmd_task( 'push origin master', NONE );
 						},
 						Wx::gettext('Fetch from Origin') => sub {
-							$self->git_cmd_task( 'fetch origin master', '' );
+							$self->git_cmd_task( 'fetch origin master', NONE );
 						},
 						Wx::gettext('Pull from Origin') => sub {
-							$self->git_cmd_task( 'pull origin master', '' );
+							$self->git_cmd_task( 'pull origin master', NONE );
 						},
 					],
 					Wx::gettext('Upstream') => [
 						Wx::gettext('Show Upstream Info.') => sub {
-							$self->git_cmd_task( 'remote show upstream', '' );
+							$self->git_cmd_task( 'remote show upstream', NONE );
 						},
 						Wx::gettext('Fetch Upstream') => sub {
-							$self->git_cmd_task( 'fetch upstream', '' );
+							$self->git_cmd_task( 'fetch upstream', NONE );
 						},
 						Wx::gettext('Merge Upstream Master') => sub {
-							$self->git_cmd_task( 'merge upstream/master', '' );
+							$self->git_cmd_task( 'merge upstream/master', NONE );
 						},
 					],
 					Wx::gettext('Branching') => [
 						Wx::gettext('Branch Info') => sub {
-							$self->git_cmd( 'branch -r -a -v', '' );
+							$self->git_cmd( 'branch -r -a -v', NONE );
 						},
 						Wx::gettext('Fetch All Branches from Origin') => sub {
-							$self->git_cmd_task( 'fetch --all', '' );
+							$self->git_cmd_task( 'fetch --all', NONE );
 						},
 					],
 					Wx::gettext('GitHub') => [
@@ -212,25 +222,33 @@ sub menu_plugins_simple {
 	# return; #do not enable this return as it Fucks-up the menu
 }
 
+
 #######
-# show_about
+# plugin_about
 #######
-sub show_about {
+sub plugin_about {
 	my $self = shift;
 
-	# Generate the About dialog
-	my $about = Wx::AboutDialogInfo->new;
-	$about->SetName("Padre::Plugin::Git");
-	$about->SetDescription( <<"END_MESSAGE" );
-Initial Git support for Padre
-END_MESSAGE
-	$about->SetVersion($VERSION);
+	my $share = $self->plugin_directory_share or return;
+	my $file = File::Spec->catfile( $share, 'icons', '32x32', 'git.png' );
+	return unless -f $file;
+	return unless -r $file;
 
-	# Show the About dialog
-	Wx::AboutBox($about);
+	my $info = Wx::AboutDialogInfo->new;
 
+	$info->SetIcon( Wx::Icon->new( $file, Wx::wxBITMAP_TYPE_PNG ) );
+	$info->SetName('Padre::Plugin::Git');
+	$info->SetVersion($VERSION);
+	$info->SetDescription( Wx::gettext('A Simple Git interface for Padre') );
+	$info->SetCopyright('(c) 2008-2012 The Padre development team');
+	$info->SetWebSite('http://padre.perlide.org/trac/wiki/PadrePluginGit');
+	$info->AddDeveloper('Kaare Rasmussen, <kaare@cpan.org>');
+	$info->AddDeveloper('Kevin Dawson <bowtie@cpan.org>');
+
+	Wx::AboutBox($info);
 	return;
 }
+
 
 #######
 # git_commit
@@ -252,7 +270,7 @@ sub git_cmd {
 
 		# p $commit_editmsg;
 
-		$message = $main->prompt( "Git Commit of $location", "Please type in your message", "MY_GIT_COMMIT" );
+		$message = $main->prompt( "Git Commit of $location", 'Please type in your message', 'MY_GIT_COMMIT' );
 
 		return if not $message;
 
@@ -330,7 +348,7 @@ sub github_pull_request {
 	my $main     = $self->main;
 	my $document = $main->current->document;
 
-	# Lets start with username and token being external to pp-git
+	# Lets start with user-name and token being external to pp-git
 	my $user  = $ENV{GITHUB_USER};
 	my $token = $ENV{GITHUB_TOKEN};
 
@@ -365,9 +383,9 @@ sub github_pull_request {
 		if ( defined $git_cmd->{error} ) {
 			if ( $git_cmd->{error} =~ m/^fatal/ ) {
 
-				# $self->{error} = 'dose not have an upstream componet';
-				say 'dose not have an upstream componet';
-				$main->error( Wx::gettext('Error: this repo dose not have an upstream componet') );
+				# $self->{error} = 'dose not have an upstream component';
+				say 'dose not have an upstream component';
+				$main->error( Wx::gettext('Error: this repo dose not have an upstream component') );
 				return;
 			}
 		}
@@ -441,7 +459,7 @@ sub git_cmd_task {
 	return;
 }
 #######
-# on compleation of task do this
+# on completion of task do this
 #######
 sub on_finish {
 	my $self = shift;
@@ -506,7 +524,7 @@ sub event_on_context_menu {
 		Wx::Event::EVT_MENU(
 			$self->main,
 			$item,
-			sub { $self->git_cmd( 'commit -a', '' ) },
+			sub { $self->git_cmd( 'commit -a', NONE ) },
 		);
 	}
 	return;
@@ -606,7 +624,7 @@ sub write_changes {
 
 		my $changes = CPAN::Changes->load(
 			$change_file,
-			next_token => qr/{{\$NEXT}}/,
+			next_token => qr/\{\{\$NEXT}}/,
 		);
 
 		my @releases = $changes->releases;
@@ -622,7 +640,17 @@ sub write_changes {
 	return;
 }
 
-
+#######
+# Add icon to Plugin
+#######
+sub plugin_icon {
+	my $self  = shift;
+	my $share = $self->plugin_directory_share or return;
+	my $file  = File::Spec->catfile( $share, 'icons', '16x16', 'git.png' );
+	return unless -f $file;
+	return unless -r $file;
+	return Wx::Bitmap->new( $file, Wx::wxBITMAP_TYPE_PNG );
+}
 
 
 
@@ -630,15 +658,22 @@ sub write_changes {
 
 __END__
 
+# Spider bait
+Perl programming -> TIOBE
+
+=pod
+
 =head1 NAME
 
-Padre::Plugin::Git - Simple Git interface for Padre, the Perl IDE,
+Padre::Plugin::Git - A Simple Git interface for Padre, the Perl IDE,
 
 =head1 VERSION
 
-version 0.07
+version 0.08
 
 =head1 SYNOPSIS
+
+B<Intended for use with Padre 0.97+>
 
 cpan install Padre::Plugin::Git
 
@@ -683,18 +718,20 @@ see L<wiki|http://padre.perlide.org/trac/wiki/PadrePluginGit> for more info.
 
 =item *	padre_interfaces
 
+=item *	plugin_about
+
 =item *	plugin_disable
 
 =item *	plugin_enable
 
-=item *	plugin_name
+=item *	plugin_icon
 
-=item *	show_about
+=item *	plugin_name
 
 =item * write_changes
 
 use CPAN::Changes to write git commits to project Change file, 
-this abuses the {{$NEXT}} token as a valid version 0.07
+this abuses the {{$NEXT}} token as a valid version 0.08
 see CPAN::Changes::Spec for format
 
 =back
@@ -711,13 +748,17 @@ To be able to do a GitHub Pull request, the following need to be configured.
 
 Kevin Dawson E<lt>bowtie@cpan.orgE<gt>
 
-Kaare Rasmussen, C<< <kaare at cpan.org> >>
+Kaare Rasmussen, E<lt>kaare@cpan.orgE<gt>
+
+
+=head2 CONTRIBUTORS
+
+Dominique Dumont E<lt>dod@debian.orgE<gt>
 
 
 =head1 BUGS
 
 Please report any bugs or feature requests to L<http://padre.perlide.org/>
-
 
 =head1 COPYRIGHT & LICENSE
 
@@ -726,6 +767,7 @@ Padre distribution all rights reserved.
 
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.
+
 
 =cut
 

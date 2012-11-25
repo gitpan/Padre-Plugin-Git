@@ -18,7 +18,10 @@ META.yml
 MYMETA.json
 MYMETA.yml
 Padre-Plugin-Git.fbp
+perltidy.ERR
 README
+share/icons/16x16/git.png
+share/icons/32x32/git.png
 t/01-compile.t
 t/02-exports.t
 t/03-pod.t
