@@ -62,6 +62,6 @@
          "url" : "http://svn.perlide.org/padre/trunk/Padre-Plugin-Git/"
       }
    },
-   "version" : "0.09",
+   "version" : "0.10",
    "x_module_name" : "Padre::Plugin::Git"
 }

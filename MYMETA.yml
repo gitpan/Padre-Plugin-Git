@@ -37,5 +37,5 @@ resources:
   homepage: http://padre.perlide.org/trac/wiki/PadrePluginGit
   license: http://dev.perl.org/licenses/
   repository: http://svn.perlide.org/padre/trunk/Padre-Plugin-Git/
-version: 0.09
+version: 0.10
 x_module_name: Padre::Plugin::Git
