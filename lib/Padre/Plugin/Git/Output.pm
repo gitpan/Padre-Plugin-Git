@@ -3,10 +3,10 @@ package Padre::Plugin::Git::Output;
 use v5.10;
 use strictures 1;
 
-use Padre::Unload                            ();
+use Padre::Unload ();
 use Padre::Plugin::Git::FBP::Output ();
 
-our $VERSION = '0.08';
+our $VERSION = '0.09';
 use parent qw(
 	Padre::Plugin::Git::FBP::Output
 	Padre::Plugin
@@ -48,12 +48,11 @@ Padre::Plugin::Git::Output - Git plugin for Padre, The Perl IDE.
 
 =head1 VERSION
 
-version 0.08
+version 0.09
 
 =head1 DESCRIPTION
 
-This module handles the Preferences dialogue window that is used to set your 
-chosen Nopaste Server and #Channel.
+This module handles the Output dialogue that is used to show git response.
 
 
 =head1 METHODS

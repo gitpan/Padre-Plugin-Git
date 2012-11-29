@@ -30,7 +30,8 @@ requires:
   Padre: 0.96
   Pithub: 0.01016
   Try::Tiny: 0.11
-  perl: 5.010
+  perl: 5.010001
+  strictures: 1.004004
 resources:
   bugtracker: http://padre.perlide.org/trac/wiki/Tickets
   homepage: http://padre.perlide.org/trac/wiki/PadrePluginGit

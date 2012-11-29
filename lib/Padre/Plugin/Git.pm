@@ -1,8 +1,9 @@
 package Padre::Plugin::Git;
 
-use v5.10;
-use warnings;
-use strict;
+use 5.010001;
+use strictures 1;
+# use warnings;
+# use strict;
 
 use Padre::Unload;
 use Padre::Config     ();
@@ -16,7 +17,7 @@ use Try::Tiny;
 use File::Slurp;
 use CPAN::Changes;
 
-our $VERSION = '0.08';
+our $VERSION = '0.09';
 use parent qw(
 	Padre::Plugin
 	Padre::Role::Task
@@ -37,15 +38,22 @@ sub plugin_enable {
 		}
 	};
 
+	#ReSet Config data
+	my $config = $self->config_read;
+	$config = {};
+	$self->config_write($config);
+
 	return $local_git_exists;
 }
 
 # Child modules we need to unload when disabled
 use constant CHILDREN => qw{
-	Padre::Plugin::Git
-	Padre::Plugin::Git::Task::Git_cmd
 	Padre::Plugin::Git::Output
 	Padre::Plugin::Git::FBP::Output
+	Padre::Plugin::Git::Message
+	Padre::Plugin::Git::FBP::Message
+	Padre::Plugin::Git::Task::Git_cmd
+	Padre::Plugin::Git
 	Pithub
 };
 
@@ -94,9 +102,6 @@ sub menu_plugins_simple {
 			if ( $self->{open_file_info}->{$tab_id}->{'vcs'} =~ m/Git/sxm ) {
 
 				return $self->plugin_name => [
-					Wx::gettext('About...') => sub {
-						$self->plugin_about;
-					},
 					Wx::gettext('Local') => [
 						Wx::gettext('Staging') => [
 							Wx::gettext('Stage File') => sub {
@@ -114,10 +119,13 @@ sub menu_plugins_simple {
 								$self->git_cmd( 'reset HEAD', $document->filename );
 								$self->git_cmd( 'status',     $document->filename );
 							},
+							Wx::gettext('Stage Patch') => sub {
+								$self->git_patch( 'git add -p ' . $document->filename );
+							},
 						],
 						Wx::gettext('Commit') => [
 							Wx::gettext('Commit File') => sub {
-								$self->git_cmd( 'commit', $document->filename );
+								$self->git_cmd( 'commit', $document->filename, $document->filename );
 							},
 							Wx::gettext('Commit Project') => sub {
 								$self->git_cmd( 'commit', $document->project_dir );
@@ -127,6 +135,9 @@ sub menu_plugins_simple {
 							},
 							Wx::gettext('Commit All') => sub {
 								$self->git_cmd( 'commit -a', NONE );
+							},
+							Wx::gettext('Commit Patch') => sub {
+								$self->git_patch( 'git commit -p ' . $document->filename );
 							},
 						],
 						Wx::gettext('Checkout') => [
@@ -214,6 +225,14 @@ sub menu_plugins_simple {
 							$self->github_pull_request();
 						},
 					],
+					Wx::gettext('About...') => sub {
+						$self->plugin_about;
+					},
+					Wx::gettext('Test Commit Message...') => sub {
+
+						# $self->commit_message();
+						$self->commit_message( $document->filename );
+					},
 				];
 			}
 		}
@@ -222,6 +241,53 @@ sub menu_plugins_simple {
 	# return; #do not enable this return as it Fucks-up the menu
 }
 
+########
+# Composed Method clean_dialog
+########
+sub clean_dialog {
+	my $self = shift;
+
+	# Close the main dialog if it is hanging around
+	if ( $self->{dialog} ) {
+		$self->{dialog}->Hide;
+		$self->{dialog}->Destroy;
+		delete $self->{dialog};
+	}
+
+	return 1;
+}
+
+########
+# plugin_disable
+########
+sub plugin_disable {
+	my $self = shift;
+
+	# Close the dialog if it is hanging around
+	$self->clean_dialog;
+
+	# Unload all our child classes
+	for my $package (CHILDREN) {
+		require Padre::Unload;
+		Padre::Unload->unload($package);
+	}
+
+	$self->SUPER::plugin_disable(@_);
+
+	return 1;
+}
+
+#######
+# Add icon to Plugin
+#######
+sub plugin_icon {
+	my $self  = shift;
+	my $share = $self->plugin_directory_share or return;
+	my $file  = File::Spec->catfile( $share, 'icons', '16x16', 'git.png' );
+	return unless -f $file;
+	return unless -r $file;
+	return Wx::Bitmap->new( $file, Wx::wxBITMAP_TYPE_PNG );
+}
 
 #######
 # plugin_about
@@ -230,7 +296,7 @@ sub plugin_about {
 	my $self = shift;
 
 	my $share = $self->plugin_directory_share or return;
-	my $file = File::Spec->catfile( $share, 'icons', '32x32', 'git.png' );
+	my $file = File::Spec->catfile( $share, 'icons', '48x48', 'git.png' );
 	return unless -f $file;
 	return unless -r $file;
 
@@ -242,13 +308,20 @@ sub plugin_about {
 	$info->SetDescription( Wx::gettext('A Simple Git interface for Padre') );
 	$info->SetCopyright('(c) 2008-2012 The Padre development team');
 	$info->SetWebSite('http://padre.perlide.org/trac/wiki/PadrePluginGit');
-	$info->AddDeveloper('Kaare Rasmussen, <kaare@cpan.org>');
 	$info->AddDeveloper('Kevin Dawson <bowtie@cpan.org>');
-
+	$info->AddDeveloper('Kaare Rasmussen <kaare@cpan.org>');
+	$info->SetArtists(
+		[   'Scott Chacon <https://github.com/github/gitscm-next>',
+			'Licence <http://creativecommons.org/licenses/by/3.0/>'
+		]
+	);
 	Wx::AboutBox($info);
 	return;
 }
 
+###
+# End of Padre API Methods
+######
 
 #######
 # git_commit
@@ -257,6 +330,7 @@ sub git_cmd {
 	my $self     = shift;
 	my $action   = shift;
 	my $location = shift;
+	my $filename = shift;
 	my $main     = $self->main;
 	my $document = $main->current->document;
 
@@ -265,13 +339,11 @@ sub git_cmd {
 	if ( $action =~ m/^commit/ ) {
 
 		#ToDo this needs to be replaced with a dedicated dialogue, as all it dose is dump in to DB::History for no good reason
-		my $commit_editmsg = read_file( $document->project_dir . '/.git/COMMIT_EDITMSG' );
-		chomp $commit_editmsg;
+		# my $commit_editmsg = read_file( $document->project_dir . '/.git/COMMIT_EDITMSG' );
+		# chomp $commit_editmsg;
 
-		# p $commit_editmsg;
-
-		$message = $main->prompt( "Git Commit of $location", 'Please type in your message', 'MY_GIT_COMMIT' );
-
+		# $message = $main->prompt( "Git Commit of $location", 'Please type in your message', 'MY_GIT_COMMIT' );
+		$message = $self->commit_message( 'Git Commit message', $filename );
 		return if not $message;
 
 		require Padre::Util;
@@ -280,8 +352,6 @@ sub git_cmd {
 			dir    => $document->project_dir,
 			option => 0
 		);
-
-		# p $git_cmd
 
 		# #update Changes file
 		# $self->write_changes( $document->project_dir, $message );
@@ -323,10 +393,7 @@ sub git_cmd {
 
 			if ( $action =~ m/^commit/ ) {
 
-				# p $git_cmd->{output};
 				$git_cmd->{output} =~ m/master\s(?<nr>[\w|\d]{7})/;
-
-				# say $+{nr};
 
 				#update Changes file
 				$self->write_changes( $document->project_dir, $message, $+{nr} );
@@ -363,7 +430,8 @@ sub github_pull_request {
 		return;
 	}
 
-	my $message = $main->prompt( "GitHub Pull Request", "Please type in your message" );
+	# my $message = $main->prompt( "GitHub Pull Request", "Please type in your message" );
+	my $message = $self->commit_message('GitHub Pull Request message');
 	return if not $message;
 
 	#Use first 32 chars of message as pull request title
@@ -460,7 +528,7 @@ sub git_cmd_task {
 }
 #######
 # on completion of task do this
-#######
+#######patch->{output};
 sub on_finish {
 	my $self = shift;
 	my $task = shift;
@@ -567,41 +635,6 @@ sub current_files {
 	return;
 }
 
-########
-# plugin_disable
-########
-sub plugin_disable {
-	my $self = shift;
-
-	# Close the dialog if it is hanging around
-	$self->clean_dialog;
-
-	# Unload all our child classes
-	for my $package (CHILDREN) {
-		require Padre::Unload;
-		Padre::Unload->unload($package);
-	}
-
-	$self->SUPER::plugin_disable(@_);
-
-	return 1;
-}
-
-########
-# Composed Method clean_dialog
-########
-sub clean_dialog {
-	my $self = shift;
-
-	# Close the main dialog if it is hanging around
-	if ( $self->{dialog} ) {
-		$self->{dialog}->Hide;
-		$self->{dialog}->Destroy;
-		delete $self->{dialog};
-	}
-
-	return 1;
-}
 
 ########
 # Composed Method write_changes under {{$NEXT}}
@@ -640,18 +673,91 @@ sub write_changes {
 	return;
 }
 
+
+
 #######
-# Add icon to Plugin
+# git_patch
 #######
-sub plugin_icon {
-	my $self  = shift;
-	my $share = $self->plugin_directory_share or return;
-	my $file  = File::Spec->catfile( $share, 'icons', '16x16', 'git.png' );
-	return unless -f $file;
-	return unless -r $file;
-	return Wx::Bitmap->new( $file, Wx::wxBITMAP_TYPE_PNG );
+sub git_patch {
+	my $self     = shift;
+	my $cmd      = shift;
+	my $main     = $self->main;
+	my $document = $main->current->document;
+
+	my $system;
+
+	# hacked from Padre-Wx-Main->run_command
+	if (Padre::Constant::WIN32) {
+		my $title = $cmd;
+		$title =~ s/"//g;
+		$system = qq(start "$title" cmd /C "$cmd  & pause");
+	} elsif (Padre::Constant::UNIX) {
+
+		if ( defined $ENV{COLORTERM} ) {
+			if ( $ENV{COLORTERM} eq 'gnome-terminal' ) {
+
+				#Gnome-Terminal line format:
+				#gnome-terminal -e "bash -c \"prove -lv t/96_edit_patch.t; exec bash\""
+				$system = qq($ENV{COLORTERM} -e "bash -c \\\"$cmd ; exec bash\\\"" & );
+			} else {
+				$system = qq(xterm -sb -e "$cmd ; sleep 1000" &);
+			}
+		}
+	} elsif (Padre::Constant::MAC) {
+
+		# tome
+		my $pwd = $self->current->document->project_dir();
+		$cmd =~ s/"/\\"/g;
+
+		# Applescript can throw spurious errors on STDERR: http://helpx.adobe.com/photoshop/kb/unit-type-conversion 0.09
+		$system = qq(osascript -e 'tell app "Terminal"\n\tdo script "cd $pwd; clear; $cmd ;"\nend tell'\n);
+
+	} else {
+		$system = qq(xterm -sb -e "$cmd ; sleep 1000" &);
+	}
+
+	# run 'git add -p file-name' in terminal
+	require Padre::Util;
+	Padre::Util::run_in_directory_two(
+		cmd    => $system,
+		dir    => $document->project_dir,
+		option => 0
+	);
+
+	return;
 }
 
+#######
+# new commit message dialog that dos not dump into DB::History
+#######
+sub commit_message {
+	my $self     = shift;
+	my $title    = shift;
+	my $filename = shift;
+
+	# Padre main window integration
+	my $main     = $self->main;
+	my $document = $main->current->document;
+
+	# Close the dialog if it is hanging around
+	$self->clean_dialog;
+
+	# Create the new dialog
+	require Padre::Plugin::Git::Message;
+	$self->{dialog} = Padre::Plugin::Git::Message->new( $main, $title, $document->project_dir, $filename );
+	$self->{dialog}->ShowModal;
+	$self->{dialog}->Destroy;
+	delete $self->{dialog};
+
+	my $config = $self->config_read;
+	if ( $config->{message} ) {
+		my $message = $config->{message};
+		chomp $message;
+		say $message;
+		return $message;
+	}
+	return;
+}
 
 
 1;
@@ -669,7 +775,7 @@ Padre::Plugin::Git - A Simple Git interface for Padre, the Perl IDE,
 
 =head1 VERSION
 
-version 0.08
+version 0.09
 
 =head1 SYNOPSIS
 
@@ -680,6 +786,8 @@ cpan install Padre::Plugin::Git
 Enable it via Padre->Tools->Plugin Manager
 
 For more info see L<wiki|http://padre.perlide.org/trac/wiki/PadrePluginGit>
+
+Padre::Plugin::Git is a Perl programming plug-in for Padre
 
 =head1 DESCRIPTION
 
@@ -700,6 +808,8 @@ see L<wiki|http://padre.perlide.org/trac/wiki/PadrePluginGit> for more info.
 
 =item * clean_dialog
 
+=item * commit_message
+
 =item * current_files
 
 =item * event_on_context_menu
@@ -707,6 +817,8 @@ see L<wiki|http://padre.perlide.org/trac/wiki/PadrePluginGit> for more info.
 =item * git_cmd
 
 =item * git_cmd_task
+
+=item * git_patch
 
 =item * github_pull_request 
  
@@ -731,7 +843,7 @@ see L<wiki|http://padre.perlide.org/trac/wiki/PadrePluginGit> for more info.
 =item * write_changes
 
 use CPAN::Changes to write git commits to project Change file, 
-this abuses the {{$NEXT}} token as a valid version 0.08
+this abuses the {{$NEXT}} token as a valid version
 see CPAN::Changes::Spec for format
 
 =back

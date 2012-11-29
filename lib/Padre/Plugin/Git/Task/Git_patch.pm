@@ -1,4 +1,4 @@
-package Padre::Plugin::Git::Task::Git_cmd;
+package Padre::Plugin::Git::Task::Git_patch;
 
 use v5.10;
 use strictures 1;
@@ -6,8 +6,8 @@ use strictures 1;
 use Carp qw( croak );
 our $VERSION = '0.09';
 
-use Padre::Task   ();
-use Padre::Unload ;
+use Padre::Task ();
+use Padre::Unload;
 use parent qw{ Padre::Task };
 
 
@@ -31,32 +31,67 @@ sub new {
 #######
 sub run {
 	my $self = shift;
+	my $cmd  = $self->{action};
+	my $system;
 
-	my $git_cmd;
+	if (Padre::Constant::WIN32) {
+		my $title = $cmd;
+		$title =~ s/"//g;
+		$system = qq(start "$title" cmd /C "$cmd  & pause");
+	} elsif (Padre::Constant::UNIX) {
+
+		if ( defined $ENV{COLORTERM} ) {
+			if ( $ENV{COLORTERM} eq 'gnome-terminal' ) {
+
+				#Gnome-Terminal line format:
+				#gnome-terminal -e "bash -c \"prove -lv t/96_edit_patch.t; exec bash\""
+				$system = qq($ENV{COLORTERM} -e "bash -c \\\"$cmd ; exec bash\\\"" & );
+			} else {
+				$system = qq(xterm -sb -e "$cmd ; sleep 1000" &);
+			}
+		}
+	} elsif (Padre::Constant::MAC) {
+
+		# tome
+		my $pwd = $self->current->document->project_dir();
+		$cmd =~ s/"/\\"/g;
+
+		# Applescript can throw spurious errors on STDERR: http://helpx.adobe.com/photoshop/kb/unit-type-conversion 0.09
+		$system = qq(osascript -e 'tell app "Terminal"\n\tdo script "cd $pwd; clear; $cmd ;"\nend tell'\n);
+
+	} else {
+		$system = qq(xterm -sb -e "$cmd ; sleep 1000" &);
+	}
+	
+	# say $system;
+
+
+
+	my $git_patch;
 	require Padre::Util;
-	$git_cmd = Padre::Util::run_in_directory_two(
-		cmd    => "git $self->{action} $self->{location}",
+	$git_patch = Padre::Util::run_in_directory_two(
+		cmd    => $system,
 		dir    => $self->{project_dir},
 		option => 0
 	);
 
-	if ( $self->{action} !~ m/^diff/ ) {
+	# if ( $self->{action} !~ m/^diff/ ) {
 
-		#strip leading #
-		$git_cmd->{output} =~ s/^(\#)//sxmg;
-	}
+		# #strip leading #
+		# $git_patch->{output} =~ s/^(\#)//sxmg;
+	# }
 
-	#ToDo sort out Fudge, why O why do we not get correct response
-	# p $git_cmd;
-	if ( $self->{action} =~ m/^[push|fetch]/ ) {
-		$git_cmd->{output} = $git_cmd->{error};
-		$git_cmd->{error}  = undef;
-	}
-	
-	#saving to $self makes thing availbe to on_finish under $task
+	# #ToDo sort out Fudge, why O why do we not get correct response
+	# # p $git_cmd;
+	# if ( $self->{action} =~ m/^[push|fetch]/ ) {
+		# $git_patch->{output} = $git_patch->{error};
+		# $git_patch->{error}  = undef;
+	# }
 
-	$self->{error}  = $git_cmd->{error};
-	$self->{output} = $git_cmd->{output};
+	# #saving to $self makes thing availbe to on_finish under $task
+
+	# $self->{error}  = $git_patch->{error};
+	# $self->{output} = $git_patch->{output};
 
 	return;
 }
