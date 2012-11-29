@@ -1,7 +1,7 @@
 Revision history for Padre-Plugin-Git
 
-{{$NEXT}}
- - 
+0.10 2012-11-29
+ - silly me left some test code visable (BOWTIE)
 
 0.09 2012-11-29
  - Oops Add Artistic accreditation (BOWTIE)
